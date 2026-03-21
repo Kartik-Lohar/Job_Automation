@@ -207,3 +207,6 @@ marimo/_lsp/
 __marimo__/
 resume.txt
 resume.pdf
+*.pdf
+*.xlsx
+output/

@@ -86,12 +86,8 @@ def phase_scrape(
 
     # Close browser immediately
     if driver:
-        try:
-            driver.quit()
-        except OSError:
-            pass
-        # Prevent __del__ from trying to quit again during garbage collection
-        driver.__del__ = lambda: None
+        from modules.browser import force_quit_driver
+        force_quit_driver(driver)
         print("\n🛑  Browser closed.")
 
     if not jobs:
@@ -135,6 +131,7 @@ def phase_evaluate(
     total = len(df)
     scored = 0
     pdfs = 0
+    pdf_driver = None  # Lazily initialize if needed
 
     for idx in range(total):
         row = df.iloc[idx]
@@ -173,6 +170,16 @@ def phase_evaluate(
         # --- Resume tailoring (score ≥ threshold) ------------------------
         if score >= threshold:
             print(f"   📝 Score ≥ {threshold} — generating tailored resume PDF…")
+            
+            # Lazily initialize the PDF driver once
+            if pdf_driver is None:
+                from modules.browser import create_stealth_driver
+                try:
+                    # Headless is preferred for resume printing
+                    pdf_driver = create_stealth_driver(headless=True, use_subprocess=True)
+                except Exception as e:
+                    print(f"   ⚠️  Failed to start PDF driver: {e}")
+
             try:
                 pdf_path = tailor_resume(
                     job_description=jd,
@@ -182,6 +189,7 @@ def phase_evaluate(
                     match_score=score,
                     threshold=threshold,
                     provider=llm_provider,
+                    driver=pdf_driver,
                 )
                 if pdf_path:
                     df.at[idx, "Resume PDF Path"] = pdf_path
@@ -189,6 +197,11 @@ def phase_evaluate(
                     print(f"   📄 Saved: {pdf_path}")
             except Exception as exc:
                 print(f"   ⚠️  Resume tailoring failed: {exc}")
+
+    # --- Cleanup PDF driver -----------------------------------------------
+    if pdf_driver:
+        from modules.browser import force_quit_driver
+        force_quit_driver(pdf_driver)
 
     # --- Save updated Excel -----------------------------------------------
     saved = update_excel(df, excel_path)

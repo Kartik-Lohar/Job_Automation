@@ -22,6 +22,7 @@ from selenium.common.exceptions import NoSuchElementException
 from modules.browser import (
     create_stealth_driver,
     dismiss_overlays,
+    force_quit_driver,
     human_delay,
     scroll_into_view,
     scroll_page,
@@ -296,7 +297,7 @@ def scrape_naukri(
         jobs = _search_jobs(driver, job_title, location, max_jobs)
     except Exception:
         if own_driver:
-            driver.quit()
+            force_quit_driver(driver)
         raise
 
     print(f"✅ [Naukri] Scraped {len(jobs)} job(s).")

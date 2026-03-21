@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Resume - {{ name }}</title>
+    <style>
+        /* PDF Page and Global Styles */
+        @page {
+            size: A4;
+            margin: 0.5in;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 11pt;
+            line-height: 1.4;
+            color: #000;
+            margin: 0;
+            padding: 0;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        p,
+        ul {
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Header Styling */
+        .header {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .header h1 {
+            font-size: 20pt;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .contact-info {
+            font-size: 10pt;
+        }
+
+        /* Section Headings */
+        .section-title {
+            font-size: 12pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            border-bottom: 1px solid #000;
+            margin-top: 15px;
+            margin-bottom: 10px;
+            padding-bottom: 2px;
+        }
+
+        /* Layout utilities */
+        .flex-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }
+
+        .bold {
+            font-weight: bold;
+        }
+
+        .italic {
+            font-style: italic;
+        }
+
+        /* Lists */
+        ul.bullet-list {
+            margin-left: 20px;
+            margin-top: 5px;
+            margin-bottom: 10px;
+        }
+
+        ul.bullet-list li {
+            margin-bottom: 3px;
+            text-align: justify;
+        }
+
+        /* Specific Sections */
+        .skills-grid {
+            margin-top: 5px;
+        }
+
+        .skills-grid p {
+            margin-bottom: 3px;
+        }
+
+        .item-block {
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <h1>{{ name }}</h1>
+        <div class="contact-info">
+            {{ phone }} | {{ email }} | {{ location }} <br>
+            LinkedIn: {{ linkedin }} | Portfolio: {{ portfolio }} | GitHub: {{ github }}
+        </div>
+    </div>
+
+    <div class="section">
+        <p>{{ professional_summary }}</p>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Domain/Functional Areas</div>
+        <ul class="bullet-list">
+            {% for domain in domains %}
+            <li>{{ domain }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Key Skills</div>
+        <div class="skills-grid">
+            {% for category, skills in key_skills.items() %}
+            <p><span class="bold">{{ category }}:</span> {{ skills }}</p>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Professional Experience</div>
+
+        {% for job in experience %}
+        <div class="item-block">
+            <div class="flex-row">
+                <div class="bold">{{ job.company }}</div>
+                <div>{{ job.location }}</div>
+            </div>
+            <div class="flex-row">
+                <div class="italic">{{ job.title }}</div>
+                <div>{{ job.dates }}</div>
+            </div>
+            <ul class="bullet-list">
+                {% for bullet in job.bullets %}
+                <li>{{ bullet }}</li>
+                {% endfor %}
+            </ul>
+            <p><span class="bold">Skills:</span> {{ job.skills_used }}</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="section">
+        <div class="section-title">Projects</div>
+
+        {% for project in projects %}
+        <div class="item-block">
+            <div class="flex-row">
+                <div class="bold">{{ project.name }}</div>
+                <div>{{ project.dates }}</div>
+            </div>
+            <div class="italic">[{{ project.tech_stack }}]</div>
+            <ul class="bullet-list">
+                <li><span class="bold">Primary Goal:</span> {{ project.primary_goal }}</li>
+                <li><span class="bold">Solution:</span> {{ project.solution }}</li>
+                <li><span class="bold">Result:</span> {{ project.result }}</li>
+            </ul>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="section">
+        <div class="section-title">Certifications</div>
+        <ul class="bullet-list">
+            {% for cert in certifications %}
+            <li><span class="bold">{{ cert.name }}</span> - {{ cert.issuer }} (Issued: {{ cert.date }})</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Education</div>
+        <div class="flex-row">
+            <div class="bold">{{ education.college }}</div>
+            <div>{{ education.location }}</div>
+        </div>
+        <div class="flex-row">
+            <div>{{ education.degree }} (Score: {{ education.score }})</div>
+            <div>{{ education.dates }}</div>
+        </div>
+    </div>
+
+</body>
+
+</html>

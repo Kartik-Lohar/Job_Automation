@@ -42,40 +42,78 @@ _USER_AGENTS = [
 # ---------------------------------------------------------------------------
 
 
-def create_stealth_driver(headless: bool = True) -> uc.Chrome:
+def create_stealth_driver(
+    headless: bool = True,
+    use_subprocess: bool = False,
+    no_sandbox: bool = True,
+    suppress_del: bool = True,
+) -> uc.Chrome:
     """
     Create an **undetected** Chrome WebDriver.
-
-    ``undetected-chromedriver`` automatically patches the binary to bypass
-    common bot-detection systems (Cloudflare, PerimeterX, DataDome, etc.).
 
     Parameters
     ----------
     headless : bool
-        Run in headless mode (no visible browser window).
-
-    Returns
-    -------
-    uc.Chrome
+        Run in headless mode.
+    use_subprocess : bool
+        Use subprocess to launch Chrome. Often False is more stable on Windows.
+    no_sandbox : bool
+        Disable sandbox (often required in Docker/Linux, but helps stability).
+    suppress_del : bool
+        Neutralize the driver's __del__ method after creation to prevent
+        WinError 6 "Handle is invalid" during garbage collection.
     """
     options = uc.ChromeOptions()
 
     if headless:
         options.add_argument("--headless=new")
 
-    # Stability / performance
-    options.add_argument("--no-sandbox")
+    if no_sandbox:
+        options.add_argument("--no-sandbox")
+    
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-notifications")
     options.add_argument("--disable-popup-blocking")
 
-    driver = uc.Chrome(options=options, use_subprocess=True)
-    driver.maximize_window()
-    driver.implicitly_wait(5)
+    # Retry initialization once if it fails immediately (fixes "no such window" blips)
+    for attempt in range(2):
+        try:
+            driver = uc.Chrome(options=options, use_subprocess=use_subprocess)
+            
+            # Neutralize __del__ to prevent annoying WinError 6 on Windows
+            if suppress_del:
+                try:
+                    driver.__del__ = lambda: None
+                except Exception:
+                    pass
+            
+            driver.maximize_window()
+            driver.implicitly_wait(5)
+            return driver
+        except Exception as e:
+            if attempt == 1:
+                raise e
+            time.sleep(1)
 
-    return driver
+    raise RuntimeError("Failed to initialize stealth driver")
+
+
+def force_quit_driver(driver: uc.Chrome | None) -> None:
+    """Safely quit a driver with error suppression and __del__ neutralizing."""
+    if not driver:
+        return
+    try:
+        # Neutralize __del__ again just in case
+        driver.__del__ = lambda: None
+    except Exception:
+        pass
+        
+    try:
+        driver.quit()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

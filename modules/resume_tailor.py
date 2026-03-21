@@ -7,13 +7,14 @@ rewrite the resume, then saves the result as a PDF using fpdf2.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
 from datetime import datetime
 
-from fpdf import FPDF
-
+from jinja2 import Environment, FileSystemLoader
+from modules.browser import create_stealth_driver, force_quit_driver
 from modules.llm import call_llm
 
 # ---------------------------------------------------------------------------
@@ -21,7 +22,9 @@ from modules.llm import call_llm
 # ---------------------------------------------------------------------------
 
 SCORE_THRESHOLD = 50  # minimum match_score to trigger tailoring
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output", "resumes")
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+OUTPUT_DIR = os.path.join(BASE_DIR, "output", "resumes")
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 
 # ---------------------------------------------------------------------------
 # LLM prompt for resume rewriting
@@ -34,29 +37,63 @@ You will receive:
 1. A **Job Description** the candidate wants to apply for.
 2. A **Base Resume** of the candidate.
 
-The candidate has 3 years of professional experience and is transitioning from
-a software testing / QA background into Data Science / ML.
-
-**Rewrite** the resume to align perfectly with the job description.
-Produce **ONLY** a valid JSON object with these keys:
+**Rewrite** the resume to align perfectly with the job description while maintaining the candidate's core identity. 
+Produce **ONLY** a valid JSON object with exactly these keys:
 
 {
-  "summary": "<3-4 sentence professional summary heavily emphasising
-    data-centric skills, Python proficiency, and relevant project work>",
-  "skills": ["<list of top skills to highlight>"],
-  "experience_bullets": [
-    "<bullet 1 — reframed to emphasise data/ML work>",
-    "<bullet 2>",
-    "..."
+  "name": "Candidate Name",
+  "phone": "Phone Number",
+  "email": "Email Address",
+  "location": "City, Country",
+  "linkedin": "LinkedIn URL",
+  "portfolio": "Portfolio/Website URL",
+  "github": "GitHub URL",
+  "professional_summary": "A 3-4 sentence summary tailored to the JD.",
+  "domains": ["Domain 1", "Domain 2"],
+  "key_skills": {
+    "Programming": "Python, SQL, etc.",
+    "ML Frameworks": "PyTorch, Scikit-learn, etc.",
+    "Tools": "Git, Docker, etc."
+  },
+  "experience": [
+    {
+      "company": "Company Name",
+      "location": "Location",
+      "title": "Job Title",
+      "dates": "Start - End",
+      "bullets": ["Bullet 1", "Bullet 2"],
+      "skills_used": "List of skills used in this role"
+    }
   ],
-  "education_and_certs": "<education + certifications, one paragraph>"
+  "projects": [
+    {
+      "name": "Project Name",
+      "dates": "Date/Duration",
+      "tech_stack": "Tech 1, Tech 2",
+      "primary_goal": "What was the goal?",
+      "solution": "How did you solve it?",
+      "result": "What was the outcome?"
+    }
+  ],
+  "certifications": [
+    {
+      "name": "Cert Name",
+      "issuer": "Issuer",
+      "date": "Month Year"
+    }
+  ],
+  "education": {
+    "college": "University Name",
+    "location": "City, State",
+    "degree": "Degree Name",
+    "score": "GPA/Percentage",
+    "dates": "Start - End"
+  }
 }
 
 Rules:
-- Heavily emphasise Python, data analysis, ML, and any relevant projects.
-- Reframe testing experience as data-quality, automation, pipeline, or
-  analytical work wherever truthful.
-- Do NOT fabricate experience — only reframe and highlight.
+- Reframe all bullets and summaries to emphasize Data Science/ML skills mentioned in the JD.
+- Keep contact info truthful from the base resume.
 - Return ONLY valid JSON, no markdown fences.
 """
 
@@ -69,74 +106,76 @@ def _build_prompt(job_description: str, base_resume: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# PDF generation
-# ---------------------------------------------------------------------------
-
-
-class _ResumePDF(FPDF):
-    """Minimal clean PDF layout for a tailored resume."""
-
-    def header(self):
-        self.set_font("Helvetica", "B", 16)
-        self.cell(0, 10, "Tailored Resume", new_x="LMARGIN", new_y="NEXT", align="C")
-        self.ln(4)
-
-    def section_title(self, title: str):
-        self.set_font("Helvetica", "B", 12)
-        self.set_fill_color(230, 230, 230)
-        self.cell(0, 8, f"  {title}", new_x="LMARGIN", new_y="NEXT", fill=True)
-        self.ln(2)
-
-    def body_text(self, text: str):
-        self.set_font("Helvetica", "", 10)
-        self.multi_cell(0, 6, text)
-        self.ln(2)
-
-    def bullet_list(self, items: list[str]):
-        self.set_font("Helvetica", "", 10)
-        for item in items:
-            self.cell(6)
-            self.multi_cell(0, 6, f"•  {item}")
-            self.ln(1)
-        self.ln(2)
-
-
-def _generate_pdf(content: dict, company: str, job_title: str) -> str:
-    """Build a PDF from the LLM-generated resume content and save it."""
+def _generate_pdf(content: dict, company: str, job_title: str, driver: any = None) -> str:
+    """
+    Build a PDF by rendering the Jinja2 HTML template and using
+    Chrome headless to print it to a pixel-perfect PDF.
+    """
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(TEMPLATE_DIR, exist_ok=True)
 
-    # Sanitise filename components
+    # 1. Setup Jinja2 and render HTML
+    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+    try:
+        template = env.get_template("resume.html")
+    except Exception as exc:
+        raise FileNotFoundError(f"Missing templates/resume.html: {exc}")
+
+    rendered_html = template.render(**content)
+
+    # Save to a temporary HTML file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_company = re.sub(r"[^a-zA-Z0-9]+", "_", company)[:30]
     safe_title = re.sub(r"[^a-zA-Z0-9]+", "_", job_title)[:30]
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{safe_company}_{safe_title}_{timestamp}.pdf"
-    filepath = os.path.join(OUTPUT_DIR, filename)
+    
+    filename_base = f"{safe_company}_{safe_title}_{timestamp}"
+    temp_html_path = os.path.join(OUTPUT_DIR, f"{filename_base}.html")
+    pdf_path = os.path.join(OUTPUT_DIR, f"{filename_base}.pdf")
 
-    pdf = _ResumePDF()
-    pdf.add_page()
+    with open(temp_html_path, "w", encoding="utf-8") as f:
+        f.write(rendered_html)
 
-    # Summary
-    pdf.section_title("Professional Summary")
-    pdf.body_text(content.get("summary", ""))
+    # 2. Print to PDF via Chrome Headless
+    local_driver = False
+    if driver is None:
+        driver = create_stealth_driver(headless=True, use_subprocess=True)
+        local_driver = True
+    
+    try:
+        # Load local HTML file
+        driver.get(f"file:///{os.path.abspath(temp_html_path)}")
+        
+        # Give it a tiny moment to render
+        import time
+        time.sleep(1)
 
-    # Skills
-    pdf.section_title("Key Skills")
-    skills = content.get("skills", [])
-    if skills:
-        pdf.body_text(", ".join(skills))
+        # Use Chrome DevTools Protocol to generate PDF
+        print_options = {
+            "landscape": False,
+            "displayHeaderFooter": False,
+            "printBackground": True,
+            "preferCSSPageSize": True,
+            "marginTop": 0, "marginBottom": 0, "marginLeft": 0, "marginRight": 0
+        }
+        
+        result = driver.execute_cdp_cmd("Page.printToPDF", print_options)
+        
+        # Decode and save the PDF
+        with open(pdf_path, "wb") as f:
+            f.write(base64.b64decode(result['data']))
+            
+    finally:
+        if local_driver and driver:
+            force_quit_driver(driver)
+            
+        # Optional: clean up the temp HTML file
+        if os.path.exists(temp_html_path):
+            try:
+                os.remove(temp_html_path)
+            except Exception:
+                pass
 
-    # Experience
-    pdf.section_title("Professional Experience")
-    bullets = content.get("experience_bullets", [])
-    if bullets:
-        pdf.bullet_list(bullets)
-
-    # Education
-    pdf.section_title("Education & Certifications")
-    pdf.body_text(content.get("education_and_certs", ""))
-
-    pdf.output(filepath)
-    return os.path.abspath(filepath)
+    return os.path.abspath(pdf_path)
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +191,7 @@ def tailor_resume(
     match_score: int,
     threshold: int = SCORE_THRESHOLD,
     provider: str = "gemini",
+    driver: any = None,
 ) -> str | None:
     """
     If the match_score meets the threshold, call the LLM to rewrite the
@@ -161,6 +201,8 @@ def tailor_resume(
     ----------
     provider : str
         ``"gemini"`` or ``"groq"``.
+    driver : uc.Chrome, optional
+        An existing driver instance to reuse for printing.
 
     Returns
     -------
@@ -190,4 +232,4 @@ def tailor_resume(
         print(f"  ⚠️  Could not parse tailored resume JSON:\n{raw[:200]}")
         return None
 
-    return _generate_pdf(content, company, job_title)
+    return _generate_pdf(content, company, job_title, driver=driver)
