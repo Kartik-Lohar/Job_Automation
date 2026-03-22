@@ -11,11 +11,22 @@
 
 ---
 
-## 🔥 Features
-- **🕵️ Stealth Scraping**: Uses `undetected_chromedriver` to safely scrape LinkedIn and Naukri without triggering anti-bot protections.
-- **🧠 AI Evaluation**: Uses Google Gemini or Groq to compare the scraped Job Description against your base resume to generate a Match Score, Missing Skills, and Readiness Assessment.
-- **📄 Dynamic PDF Resumes**: For jobs scoring above a specific threshold, it injects the AI-tailored content into a beautiful HTML/Jinja2 template, rendering a crisp, tailored PDF resume using headless Chrome.
-- **📊 Excel Tracking**: Automatically logs every scraped job, AI evaluation feedback, and local paths to the tailored resumes into a clean `data/job_applications.xlsx` log.
+## 🚀 Features
+- **Stealth Scraping**: Uses `undetected-chromedriver` to bypass bot protection on LinkedIn and Naukri.
+- **Config-Driven**: Control all job titles, locations, and system paths from a single `config.yaml`.
+- **Combinatorial Search**: Search for multiple titles and locations at once.
+- **Freshness Control**: Toggle between "Past 24 Hours" or "All Time" job listings.
+- **AI-Powered Evaluation**: Automatically scores job descriptions against your resume using Gemini or Groq.
+- **One-Page Resume Tailoring**: Dynamically generates a custom LaTeX-style HTML/PDF resume for high-scoring jobs.
+- **Auto-Cleanup**: Automatically keeps your output directory clean from failed or interrupted runs.
+
+## 🛠️ Usage
+1.  **Configure**: Edit `config.yaml` with your details and target job titles.
+2.  **Run**: Execute the pipeline with one command:
+    ```bash
+    py main.py
+    ```
+3.  **Review**: Check the `output/run_timestamp/` folder for your Excel summary and tailored PDF resumes.
 
 ---
 

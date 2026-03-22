@@ -15,6 +15,7 @@ Follows the same pattern as the LinkedIn scraper:
 from __future__ import annotations
 
 import re
+import urllib.parse
 
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
@@ -39,14 +40,46 @@ SEARCH_URL = "https://www.naukri.com/{slug}-jobs-in-{location}"
 # ---------------------------------------------------------------------------
 
 
-def _build_search_url(job_title: str, location: str) -> str:
+def _build_search_url(job_title: str, location: str, past_24_hours: bool = True) -> str:
     """
-    Naukri uses slug-style URLs:
-        naukri.com/data-scientist-jobs-in-bangalore
+    Naukri uses slug-style URLs, but heavily respects ?k= and ?l= overriding.
+    We must separate 'Remote' (which maps to wfhType=2) from physical cities
+    to prevent Naukri from breaking its location search functionality.
     """
+    # The slug MUST contain all titles joined by hyphens, or Naukri's frontend
+    # will trigger a redirect that wipes out our ?jobAge and ?wfhType queries.
     slug = re.sub(r"[^a-z0-9]+", "-", job_title.lower()).strip("-")
-    loc_slug = re.sub(r"[^a-z0-9]+", "-", location.lower()).strip("-")
-    return SEARCH_URL.format(slug=slug, location=loc_slug)
+    
+    k_param = urllib.parse.quote(job_title)
+    
+    # Process locations
+    raw_locs = [l.strip() for l in location.split(",")]
+    remote_aliases = ("remote", "work from home", "wfh")
+    
+    # Separate physical cities from remote flags
+    cities = [l for l in raw_locs if l.lower() not in remote_aliases]
+    is_remote = any(l.lower() in remote_aliases for l in raw_locs)
+    
+    url = f"https://www.naukri.com/{slug}-jobs"
+    
+    if cities:
+        first_city = cities[0]
+        loc_slug = re.sub(r"[^a-z0-9]+", "-", first_city.lower()).strip("-")
+        url += f"-in-{loc_slug}"
+        
+    url += f"?k={k_param}"
+    
+    if cities:
+        l_param = urllib.parse.quote(", ".join(cities))
+        url += f"&l={l_param}"
+        
+    if past_24_hours:
+        url += "&jobAge=1"
+    
+    if is_remote:
+        url += "&wfhType=2"
+        
+    return url
 
 
 # ---------------------------------------------------------------------------
@@ -54,9 +87,9 @@ def _build_search_url(job_title: str, location: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _search_jobs(driver, job_title: str, location: str, max_jobs: int) -> list[dict]:
+def _search_jobs(driver, job_title: str, location: str, max_jobs: int, past_24_hours: bool = True) -> list[dict]:
     """Navigate to Naukri public search and collect listings."""
-    url = _build_search_url(job_title, location)
+    url = _build_search_url(job_title, location, past_24_hours)
     driver.get(url)
     human_delay(3, 5)
 
@@ -67,8 +100,11 @@ def _search_jobs(driver, job_title: str, location: str, max_jobs: int) -> list[d
     seen_links: set[str] = set()
     scroll_attempts = 0
     max_scroll_attempts = 20  # safety limit
+    no_new_jobs_streak = 0
 
     while len(jobs) < max_jobs and scroll_attempts < max_scroll_attempts:
+        previous_job_count = len(jobs)
+        
         # Grab all visible job cards
         cards = driver.find_elements(
             By.CSS_SELECTOR,
@@ -96,6 +132,14 @@ def _search_jobs(driver, job_title: str, location: str, max_jobs: int) -> list[d
                     )
             except Exception as exc:  # noqa: BLE001
                 print(f"  ⚠️  Skipping card — {exc}")
+
+        if len(jobs) == previous_job_count:
+            no_new_jobs_streak += 1
+            if no_new_jobs_streak >= 2:
+                print(f"  [Naukri] On portal there are fewer jobs ({len(jobs)}) than the max jobs ({max_jobs}) given in command. Moving to next pipeline.")
+                break
+        else:
+            no_new_jobs_streak = 0
 
         # Scroll down to load more cards (same as LinkedIn pattern)
         scroll_page(driver, pixels=800)
@@ -276,6 +320,7 @@ def scrape_naukri(
     location: str,
     max_jobs: int = 25,
     headless: bool = True,
+    past_24_hours: bool = True,
     driver=None,
 ) -> tuple[list[dict], object]:
     """
@@ -294,7 +339,7 @@ def scrape_naukri(
           f"(max {max_jobs}, headless={headless})…")
 
     try:
-        jobs = _search_jobs(driver, job_title, location, max_jobs)
+        jobs = _search_jobs(driver, job_title, location, max_jobs, past_24_hours)
     except Exception:
         if own_driver:
             force_quit_driver(driver)

@@ -12,9 +12,7 @@ from datetime import datetime
 
 import pandas as pd
 
-DEFAULT_EXCEL_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "data", "job_applications.xlsx"
-)
+# Cleaned up static DEFAULT_EXCEL_PATH. Path must be explicitly provided.
 
 # ---------------------------------------------------------------------------
 # Column definitions
@@ -47,7 +45,7 @@ ALL_COLUMNS = _SCRAPE_COLUMNS + _EVAL_COLUMNS
 
 def save_jobs_to_excel(
     jobs: list[dict],
-    filepath: str = DEFAULT_EXCEL_PATH,
+    filepath: str,
 ) -> str:
     """
     Write all scraped jobs to a **new** Excel file (overwrites if exists).
@@ -90,14 +88,14 @@ def save_jobs_to_excel(
 # ---------------------------------------------------------------------------
 
 
-def load_jobs_from_excel(filepath: str = DEFAULT_EXCEL_PATH) -> pd.DataFrame:
+def load_jobs_from_excel(filepath: str) -> pd.DataFrame:
     """Read the job Excel into a DataFrame."""
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Excel file not found: {filepath}")
     return pd.read_excel(filepath, engine="openpyxl")
 
 
-def update_excel(df: pd.DataFrame, filepath: str = DEFAULT_EXCEL_PATH) -> str:
+def update_excel(df: pd.DataFrame, filepath: str) -> str:
     """Overwrite the Excel file with the updated DataFrame."""
     return _safe_write(df, filepath)
 

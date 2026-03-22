@@ -22,6 +22,7 @@ def scrape_jobs(
     location: str,
     max_jobs: int = 25,
     headless: bool = True,
+    past_24_hours: bool = True,
     driver=None,
 ) -> tuple[list[dict], object]:
     """
@@ -60,5 +61,6 @@ def scrape_jobs(
         location=location,
         max_jobs=max_jobs,
         headless=headless,
+        past_24_hours=past_24_hours,
         driver=driver,
     )

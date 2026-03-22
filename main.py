@@ -12,6 +12,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import yaml
+
+def load_config(config_path="config.yaml"):
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    return {}
 
 # ---------------------------------------------------------------------------
 # Hardcoded resume path — place your resume PDF here
@@ -19,9 +26,7 @@ import os
 
 DEFAULT_RESUME_PATH = os.path.join(os.path.dirname(__file__), "resume.pdf")
 
-DEFAULT_EXCEL = os.path.join(
-    os.path.dirname(__file__), "data", "job_applications.xlsx"
-)
+# Removed static DEFAULT_EXCEL to enforce dynamic timestamped directories
 
 # ---------------------------------------------------------------------------
 # Resume loader (supports .pdf and .txt)
@@ -62,6 +67,7 @@ def phase_scrape(
     max_jobs: int,
     headless: bool,
     excel_path: str,
+    past_24_hours: bool = True,
 ) -> str | None:
     """Scrape jobs and save raw data to Excel. Returns saved filepath or None."""
     from modules.scraper import scrape_jobs
@@ -82,6 +88,7 @@ def phase_scrape(
         location=location,
         max_jobs=max_jobs,
         headless=headless,
+        past_24_hours=past_24_hours,
     )
 
     # Close browser immediately
@@ -109,6 +116,8 @@ def phase_evaluate(
     resume_text: str,
     threshold: int,
     llm_provider: str = "gemini",
+    output_dir: str = None,
+    profile_links: dict = None,
 ) -> None:
     """Read Excel, evaluate each job via LLM, generate PDFs, update Excel."""
     from modules.data_manager import load_jobs_from_excel, update_excel
@@ -127,6 +136,12 @@ def phase_evaluate(
     if df.empty:
         print("⚠️   Excel is empty — nothing to evaluate.")
         return
+        
+    # Ensure columns exist and are cast to object to avoid FutureWarnings during assignment
+    for col in ["Match Score", "Missing Skills", "Readiness Assessment", "Resume PDF Path", "Tailored Match Score"]:
+        if col not in df.columns:
+            df[col] = None
+        df[col] = df[col].astype(object)
 
     total = len(df)
     scored = 0
@@ -173,15 +188,20 @@ def phase_evaluate(
             
             # Lazily initialize the PDF driver once
             if pdf_driver is None:
-                from modules.browser import create_stealth_driver
+                from selenium import webdriver
+                from selenium.webdriver.chrome.options import Options
                 try:
-                    # Headless is preferred for resume printing
-                    pdf_driver = create_stealth_driver(headless=True, use_subprocess=True)
+                    options = Options()
+                    options.add_argument("--headless=new")
+                    options.add_argument("--disable-gpu")
+                    options.add_argument("--no-sandbox")
+                    options.add_argument("--allow-file-access-from-files")
+                    pdf_driver = webdriver.Chrome(options=options)
                 except Exception as e:
                     print(f"   ⚠️  Failed to start PDF driver: {e}")
 
             try:
-                pdf_path = tailor_resume(
+                pdf_path, post_score = tailor_resume(
                     job_description=jd,
                     base_resume=resume_text,
                     company=str(company),
@@ -190,18 +210,23 @@ def phase_evaluate(
                     threshold=threshold,
                     provider=llm_provider,
                     driver=pdf_driver,
+                    output_dir=output_dir,
+                    profile_links=profile_links,
                 )
                 if pdf_path:
                     df.at[idx, "Resume PDF Path"] = pdf_path
+                    df.at[idx, "Tailored Match Score"] = post_score
                     pdfs += 1
-                    print(f"   📄 Saved: {pdf_path}")
+                    print(f"   📄 Saved: {pdf_path}  |  Tailored Score: {post_score}")
             except Exception as exc:
                 print(f"   ⚠️  Resume tailoring failed: {exc}")
 
     # --- Cleanup PDF driver -----------------------------------------------
     if pdf_driver:
-        from modules.browser import force_quit_driver
-        force_quit_driver(pdf_driver)
+        try:
+            pdf_driver.quit()
+        except:
+            pass
 
     # --- Save updated Excel -----------------------------------------------
     saved = update_excel(df, excel_path)
@@ -220,66 +245,104 @@ def phase_evaluate(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Stealth Job Pipeline — scrape & evaluate in one go",
-    )
-    parser.add_argument("--platform", choices=["linkedin", "naukri"],
-                        default="linkedin", help="Job platform (default: linkedin)")
-    parser.add_argument("--title", default="Data Scientist",
-                        help='Job title (default: "Data Scientist")')
-    parser.add_argument("--location", default="Bangalore",
-                        help='Location (default: "Bangalore")')
-    parser.add_argument("--max-jobs", type=int, default=25,
-                        help="Max jobs to scrape (default: 25)")
-    parser.add_argument("--excel", default=DEFAULT_EXCEL,
-                        help="Excel file path")
-    parser.add_argument("--resume", default=None,
-                        help="Path to a .txt resume file (uses default if omitted)")
-    parser.add_argument("--threshold", type=int, default=50,
-                        help="Min score to generate tailored resume (default: 50)")
-    parser.add_argument("--llm", choices=["gemini", "groq"],
-                        default="gemini",
-                        help="LLM provider: gemini (default) or groq")
+    config = load_config()
+    search_cfg = config.get("search", {})
+    eval_cfg = config.get("evaluation", {})
+    profile_cfg = config.get("profile", {})
+    
+    # --- Search config ---
+    platform = search_cfg.get("platform", "linkedin")
+    
+    titles = search_cfg.get("titles", [search_cfg.get("title", "Data Scientist")])
+    if isinstance(titles, str): titles = [titles]
+    
+    locations = search_cfg.get("locations", [search_cfg.get("location", "Bangalore")])
+    if isinstance(locations, str): locations = [locations]
+    
+    max_jobs = search_cfg.get("max_jobs", 25)
+    past_24_hours = search_cfg.get("past_24_hours", True)
+    headless = search_cfg.get("headless", True)
+    
+    # --- Evaluation config ---
+    threshold = eval_cfg.get("threshold", 50)
+    llm_provider = eval_cfg.get("llm_provider", "gemini")
+    
+    # --- Setup Dynamic Output Directory ---
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    custom_out = eval_cfg.get("output_path", "")
+    if custom_out and custom_out.strip():
+        base_out = custom_out.strip()
+    else:
+        base_out = os.path.join(os.path.dirname(__file__), "output")
+        
+    run_dir = os.path.join(base_out, f"run_{timestamp}")
+    active_output_dir = run_dir
+    excel_path = os.path.join(run_dir, "job_applications.xlsx")
 
-    headless_grp = parser.add_mutually_exclusive_group()
-    headless_grp.add_argument("--headless", action="store_true", default=True)
-    headless_grp.add_argument("--no-headless", action="store_false",
-                              dest="headless")
+    try:
+        os.makedirs(run_dir, exist_ok=True)
 
-    args = parser.parse_args()
+        # --- Load resume (hardcoded path or yaml override) -----------------
+        resume_path = eval_cfg.get("base_resume_path", "")
+        if not resume_path or not resume_path.strip():
+            resume_path = DEFAULT_RESUME_PATH
 
-    # --- Load resume (hardcoded path or --resume override) -----------------
-    resume_path = args.resume if args.resume else DEFAULT_RESUME_PATH
+        if not os.path.isfile(resume_path):
+            print(f"❌  Resume file not found: {resume_path}")
+            print("    Place your resume.pdf in the project root, or specify exactly in config.yaml")
+            return
 
-    if not os.path.isfile(resume_path):
-        print(f"❌  Resume file not found: {resume_path}")
-        print("    Place your resume.pdf in the project root, or use --resume <path>")
-        return
+        resume_text = _load_resume(resume_path)
+        print(f"📄  Resume loaded from: {resume_path}")
+        print(f"    ({len(resume_text)} characters extracted)")
 
-    resume_text = _load_resume(resume_path)
-    print(f"📄  Resume loaded from: {resume_path}")
-    print(f"    ({len(resume_text)} characters extracted)")
+        # Format the lists into comma separated strings for native multi-search
+        combined_title = ", ".join(titles)
+        
+        # Resolving Location Conflicts (Remote vs Hybrid Strictness)
+        # If Remote is included, prune physical cities to prevent aggressive hybrid narrowing.
+        locs_lower = [l.strip().lower() for l in locations]
+        if any(l in ("remote", "work from home", "wfh") for l in locs_lower):
+            print(f"🌍  Conflict override: 'Remote' detected. Ignoring physical cities for broader yield.")
+            combined_location = "Remote"
+        else:
+            combined_location = ", ".join(locations)
+        
+        # --- Phase 1: Scrape Natively -----------------------------------------
+        saved_excel = phase_scrape(
+            platform=platform,
+            title=combined_title,
+            location=combined_location,
+            max_jobs=max_jobs,
+            headless=headless,
+            excel_path=excel_path,
+            past_24_hours=past_24_hours,
+        )
 
-    # --- Phase 1: Scrape -------------------------------------------------
-    saved_excel = phase_scrape(
-        platform=args.platform,
-        title=args.title,
-        location=args.location,
-        max_jobs=args.max_jobs,
-        headless=args.headless,
-        excel_path=args.excel,
-    )
+        if not saved_excel:
+            return
 
-    if not saved_excel:
-        return
-
-    # --- Phase 2: Evaluate (auto-triggered, uses the ACTUAL saved path) ---
-    phase_evaluate(
-        excel_path=saved_excel,
-        resume_text=resume_text,
-        threshold=args.threshold,
-        llm_provider=args.llm,
-    )
+        # --- Phase 2: Evaluate (auto-triggered, uses the ACTUAL saved path) ---
+        phase_evaluate(
+            excel_path=saved_excel,
+            resume_text=resume_text,
+            threshold=threshold,
+            llm_provider=llm_provider,
+            output_dir=active_output_dir,
+            profile_links=profile_cfg,
+        )
+    finally:
+        # Loophole fix: If the script failed or was interrupted and no files 
+        # were created in the run directory, delete it to keep 'output' clean.
+        if os.path.isdir(run_dir):
+            if not os.listdir(run_dir):
+                try:
+                    os.rmdir(run_dir)
+                    print(f"\n✨  Cleaned up empty output directory: {run_dir}")
+                except:
+                    pass
 
 
 if __name__ == "__main__":

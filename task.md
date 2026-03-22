@@ -11,12 +11,18 @@ This document tracks the ongoing and upcoming tasks for the Stealth Job Pipeline
 - [x] Resume tailorer using HTML/Jinja2 and Chrome backend for PDF generation.
 - [x] Fix Windows `undetected_chromedriver` process management bugs (`NoSuchWindowException` / `WinError 6`).
 - [x] Create project sync files (`AI_Sync.md`, `task.md`, `implementation_plan.md`) for cross-machine AI collaboration.
+- [x] Implement centralized `config.yaml` to handle all user parameters, paths, and CLI defaults.
+- [x] Add configurable "Past 24 Hours" freshness filter toggle for all platforms.
+- [x] Implement deterministic profile URL injection to prevent LLM hallucination.
+- [x] Refactored config fields into YAML arrays (`titles`, `locations`) to support combinatorial bulk-sweeping of job boards.
+- [x] Fixed Naukri React-router redirection bug that stripped query parameters on multi-search.
+- [x] Implemented "Remote" priority pruning to resolve URL filter collisions between physical cities and WFH flags.
+- [x] Added automatic directory cleanup for failed/interrupted runs to stop accumulation of empty output folders.
+- [x] Shattered LLM numeric prompt-anchoring to force dynamic and critical ATS match score calculation.
 
 ## Current & In-Progress Tasks [/]
 - [/] Ensure stability of the headless PDF extraction under load.
 - [/] Test the full pipeline on a fresh machine environment to confirm `requirements.txt` is complete.
-- [/] Implement CSS/Content constraints to strictly ensure the tailored PDF resume fits on a single page.
-- [/] Fix profile links in the generated PDF so that they remain genuinely clickable.
 
 ## Upcoming Tasks [ ]
 - [ ] Add support for additional job boards (e.g., Indeed, Glassdoor).

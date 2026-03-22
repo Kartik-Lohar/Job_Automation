@@ -1,0 +1,35 @@
+# ==========================================
+# Stealth Job Pipeline Configuration
+# ==========================================
+
+# 1. Search Parameters
+search:
+  platform: "naukri"              # "linkedin" or "naukri"
+  titles:
+    - "Machine Learning Engineer"
+    - "Data Scientist"
+  # STANDARD FOR LOCATIONS:
+  # If "Remote" (or WFH) is included in the list alongside physical cities, 
+  # the orchestrator will OVERRIDE and strictly strip out the cities to perform 
+  # a pure Remote search instead of a mixed Hybrid search. 
+  # To search physical cities, remove "Remote" from this list.
+  locations:
+    - "Gurugram"
+    - "Jaipur"
+    - "Hyderabad"
+  max_jobs: 5
+  past_24_hours: true             # true: only fetch jobs posted in last 24h. false: fetch all.
+  headless: false                 # Set to false to see the browser, true for background scraping
+
+# 2. Evaluation & System Settings
+evaluation:
+  llm_provider: "groq"            # "gemini" or "groq"
+  threshold: 50                   # Minimum match score to generate a tailored resume
+  base_resume_path: ""            # e.g., "C:/Users/karti/Documents/My_Resume.pdf" (Leave empty to default to resume.pdf in project root)
+  output_path: ""                 # e.g., "D:/Job_Search/Output" (Leave empty to default to 'output/' folder in project root)
+
+# 3. Candidate Profile Details (Deterministically injected into customized resumes)
+profile:
+  linkedin: "https://www.linkedin.com/in/kartik-lohar"
+  github: "https://github.com/Kartik-Lohar"
+  portfolio: "https://codebasics.io/portfolio/Kartik-Lohar"

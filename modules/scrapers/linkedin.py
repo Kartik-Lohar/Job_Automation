@@ -12,7 +12,7 @@ sign-in prompts.
 from __future__ import annotations
 
 import re
-from urllib.parse import quote_plus
+from urllib.parse import quote
 
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import (
@@ -38,7 +38,6 @@ from modules.browser import (
 GUEST_SEARCH_URL = (
     "https://www.linkedin.com/jobs/search/"
     "?keywords={keywords}&location={location}"
-    "&f_TPR=r86400"  # Past 24 hours filter
 )
 
 # ---------------------------------------------------------------------------
@@ -46,12 +45,15 @@ GUEST_SEARCH_URL = (
 # ---------------------------------------------------------------------------
 
 
-def _search_jobs(driver, job_title: str, location: str, max_jobs: int) -> list[dict]:
+def _search_jobs(driver, job_title: str, location: str, max_jobs: int, past_24_hours: bool = True) -> list[dict]:
     """Navigate to LinkedIn public job search and collect listings."""
     url = GUEST_SEARCH_URL.format(
-        keywords=quote_plus(job_title),
-        location=quote_plus(location),
+        keywords=quote(job_title),
+        location=quote(location),
     )
+    if past_24_hours:
+        url += "&f_TPR=r86400"
+        
     driver.get(url)
     human_delay(3, 5)
 
@@ -62,8 +64,11 @@ def _search_jobs(driver, job_title: str, location: str, max_jobs: int) -> list[d
     seen_links: set[str] = set()
     scroll_attempts = 0
     max_scroll_attempts = 15  # safety limit
+    no_new_jobs_streak = 0
 
     while len(jobs) < max_jobs and scroll_attempts < max_scroll_attempts:
+        previous_job_count = len(jobs)
+        
         # Grab all visible job cards
         cards = driver.find_elements(
             By.CSS_SELECTOR,
@@ -86,6 +91,14 @@ def _search_jobs(driver, job_title: str, location: str, max_jobs: int) -> list[d
                     )
             except Exception as exc:  # noqa: BLE001
                 print(f"  ⚠️  Skipping card — {exc}")
+
+        if len(jobs) == previous_job_count:
+            no_new_jobs_streak += 1
+            if no_new_jobs_streak >= 2:
+                print(f"  [LinkedIn] On portal there are fewer jobs ({len(jobs)}) than the max jobs ({max_jobs}) given in command. Moving to next pipeline.")
+                break
+        else:
+            no_new_jobs_streak = 0
 
         # Scroll down to load more cards
         scroll_page(driver, pixels=800)
@@ -307,6 +320,7 @@ def scrape_linkedin(
     location: str,
     max_jobs: int = 25,
     headless: bool = True,
+    past_24_hours: bool = True,
     driver=None,
 ) -> tuple[list[dict], object]:
     """
@@ -325,7 +339,7 @@ def scrape_linkedin(
           f"(max {max_jobs}, headless={headless})…")
 
     try:
-        jobs = _search_jobs(driver, job_title, location, max_jobs)
+        jobs = _search_jobs(driver, job_title, location, max_jobs, past_24_hours)
     except Exception:
         if own_driver:
             force_quit_driver(driver)
