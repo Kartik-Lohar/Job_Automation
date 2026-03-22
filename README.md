@@ -12,86 +12,63 @@
 ---
 
 ## 🚀 Features
-- **Stealth Scraping**: Uses `undetected-chromedriver` to bypass bot protection on LinkedIn and Naukri.
-- **Config-Driven**: Control all job titles, locations, and system paths from a single `config.yaml`.
-- **Combinatorial Search**: Search for multiple titles and locations at once.
-- **Freshness Control**: Toggle between "Past 24 Hours" or "All Time" job listings.
-- **AI-Powered Evaluation**: Automatically scores job descriptions against your resume using Gemini or Groq.
-- **One-Page Resume Tailoring**: Dynamically generates a custom LaTeX-style HTML/PDF resume for high-scoring jobs.
-- **Auto-Cleanup**: Automatically keeps your output directory clean from failed or interrupted runs.
-
-## 🛠️ Usage
-1.  **Configure**: Edit `config.yaml` with your details and target job titles.
-2.  **Run**: Execute the pipeline with one command:
-    ```bash
-    py main.py
-    ```
-3.  **Review**: Check the `output/run_timestamp/` folder for your Excel summary and tailored PDF resumes.
+- **🕵️ Stealth Scraping**: Uses `undetected_chromedriver` to bypass bot protection on LinkedIn and Naukri.
+- **⚙️ Config-Driven Orchestration**: Control all job titles, locations, and system paths from a single `config.yaml`. No more complex CLI flags!
+- **🔄 Combinatorial Search**: Search for multiple titles (e.g., ML Engineer, Data Scientist) across multiple locations (e.g., Remote, Gurgaon) in one go.
+- **🕒 Freshness Control**: Toggle a 24-hour filter to only see the most recent postings.
+- **🧠 AI Match Scoring**: Uses Gemini or Groq to critically evaluate matching scores.
+- **📄 Dynamic Resume Tailoring**: Generates a custom LaTeX-style HTML/PDF resume for high-scoring jobs.
+- **📊 Automated Logging**: Saves results to Excel and links to tailored PDFs in timestamped folders.
+- **✨ Auto-Cleanup**: Automatically deletes empty run folders if a session is interrupted or fails.
 
 ---
 
-## ⚙️ Setup & Installation
+## 🏗️ System Architecture
+The pipeline is designed as a modular, configuration-driven engine:
 
-**1. Clone the repository**
-```bash
-git clone https://github.com/Kartik-Lohar/Job_Automation.git
-cd Job_Automation
+1.  **Config Loader**: `main.py` parses `config.yaml` to handle multi-keyword and multi-location arrays.
+2.  **Scraper Engine**: `modules/scrapers/` uses platform-specific logic. 
+    - *Naukri Fix*: Features custom slug-generation to bypass React-router redirects that used to strip query parameters.
+    - *Conflict Resolver*: Automatically prioritizes "Remote" searches if mixed with physical cities to ensure maximum job yield.
+3.  **Evaluation Phase**: `modules/evaluation.py` passes data to LLMs (Gemini/Groq).
+4.  **Tailoring Phase**: `modules/resume_tailor.py` uses Jinja2 and Chrome Headless to generate one-page PDFs. It deterministically injects profile links from your config to prevent AI hallucination.
+5.  **Output Management**: Results are stored in `output/run_YYYYMMDD_HHMMSS/` for perfect session isolation.
+
+---
+
+## 🛠️ Setup & Usage
+
+### 1. Configure
+Edit `config.yaml` in the root:
+```yaml
+search:
+  titles:
+    - "Machine Learning Engineer"
+    - "Data Scientist"
+  locations:
+    - "Remote"
+    - "Gurgaon"
+  past_24_hours: true
 ```
 
-**2. Install Dependencies**
-```bash
-pip install -r requirements.txt
-```
-
-**3. Configure Environment Variables**
-Create a `.env` file in the root directory and add your preferred LLM API keys:
+### 2. Environment
+Add your API keys to `.env`:
 ```env
-GEMINI_API_KEY=your_google_gemini_key_here
-GROQ_API_KEY=your_groq_api_key_here
+GEMINI_API_KEY=your_key
+GROQ_API_KEY=your_key
 ```
 
-**4. Add Your Base Resume**
-Drop your base resume into the project root. It can be named `resume.pdf` or `resume.txt`.
-
----
-
-## 💻 Usage
-
-Run the complete pipeline (Scrape -> Evaluate -> Tailor) with a single command:
-
+### 3. Run
 ```bash
-python main.py \
-  --platform linkedin \
-  --title "Data Scientist" \
-  --location "Bangalore" \
-  --max-jobs 10 \
-  --resume resume.pdf \
-  --threshold 60 \
-  --llm gemini \
-  --headless
+python main.py
 ```
 
-### CLI Arguments:
-- `--platform`: Target job board (`linkedin` or `naukri`). Default is `linkedin`.
-- `--title`: The job title you're searching for. Default is `Data Scientist`.
-- `--location`: Target city or region. Default is `Bangalore`.
-- `--max-jobs`: How many jobs to scrape before stopping. Default is `25`.
-- `--resume`: Explicit path to your base `.pdf` or `.txt` resume. (Defaults to `resume.pdf` in root).
-- `--threshold`: Only generate a tailored PDF if the AI match score is `>=` this number (0-100). Default is `50`.
-- `--llm`: Choose the AI LLM provider (`gemini` or `groq`). Default is `gemini`.
-- `--headless` / `--no-headless`: Run the scraping browser in the background. (Note: Resume PDF generation always happens in headless).
-
 ---
 
-## 🏗️ Architecture Design
-1. **Phase 1 (Scraper)**: `modules/scrapers/` scrapes the data and passes it to `modules/data_manager.py` to be saved in an Excel sheet.
-2. **Phase 2 (Evaluation)**: `modules/evaluation.py` loops through the jobs. It sends the JD and your resume to the LLM.
-3. **Phase 3 (Tailoring)**: If the job passes the threshold score, `modules/resume_tailor.py` dynamically injects keywords and achievements into `templates/resume.html` via Jinja2. It then uses Chrome DevTools (CDP) to print a customized PDF directly into the `output/` directory so you can apply immediately!
-
----
-
-## 📌 Known Issues & Upcoming Features
-- **Strict Single Page Constraint**: We are actively refining CSS variables to ensure the generated tailored resumes never accidentally bleed onto a second page. (Currently in progress).
-- **Clickable Profile Links**: Ongoing patch to ensure custom profile links inside the output PDFs remain clickable.
+## 📌 Current Status & Known Issues
+- **✅ Fixed**: Naukri multi-title search redirects and query parameter stripping.
+- **✅ Fixed**: Remote vs City search collisions (Remote now overrides and prioritizes correctly).
+- **✅ Fixed**: LLM numeric anchoring (Scores are now critically calculated).
+- **📝 Ongoing**: Refining CSS for perfect 1-page PDF rendering across varying JD lengths.
 
 *Happy Job Hunting! automating the boring stuff so you can focus on the interviews.*
