@@ -17,7 +17,7 @@ search:
     - "Gurugram"
     - "Jaipur"
     - "Hyderabad"
-  max_jobs: 5
+  max_jobs: 2
   past_24_hours: true             # true: only fetch jobs posted in last 24h. false: fetch all.
   headless: false                 # Set to false to see the browser, true for background scraping
 
